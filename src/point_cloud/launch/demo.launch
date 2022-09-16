@@ -1,0 +1,8 @@
+<launch>
+
+ <node name="rviz" pkg="rviz" type="rviz" args="-d $(find point_cloud)/rviz/demo.rviz"/>
+ <node name="$(anon demo)" pkg="point_cloud" type="point_cloud" output="screen">
+ </node>
+
+
+</launch>
