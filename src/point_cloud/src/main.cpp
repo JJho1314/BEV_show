@@ -12,10 +12,11 @@
 #include <pcl/visualization/pcl_visualizer.h>
 #include <cv_bridge/cv_bridge.h>
 #include <string>
+#include <sstream>
 
 image_transport::Publisher obj_pub;
 
-void readInToMatrix(std::fstream &in, std::string FilePath, std::vector<position> path)
+void readInToMatrix(std::fstream &in, std::string FilePath, std::vector<position> &path)
 {
     in.open(FilePath, ios::in); //打开一个file
     if (!in.is_open())
@@ -39,13 +40,13 @@ void readInToMatrix(std::fstream &in, std::string FilePath, std::vector<position
         {
             // char * -> int
             a = atof(p);
-            // cout << a << endl;
             nums.push_back(a);
             p = strtok(NULL, split);
         } // end while
         pos.x = nums[0];
         pos.y = nums[1];
         pos.z = nums[2];
+
         path.push_back(pos);
     } // end while
     in.close();
@@ -60,19 +61,15 @@ int main(int argc, char **argv)
 
     image_transport::ImageTransport it(nh);
 
-    obj_pub = it.advertise("image", 100);
-
     initSocketData();
 
     point_cloud_box pcb;
 
-    // pcb.createROSPubSub();
-
     ros::Publisher pcl_pub = nh.advertise<sensor_msgs::PointCloud2>("pcl_output", 1);
 
-    sensor_msgs::PointCloud2 output;
+    obj_pub = it.advertise("image", 100);
 
-    // pcb.createROSPubSub();
+    sensor_msgs::PointCloud2 output;
 
     pcl::PointCloud<pcl::PointXYZ> cloud;
 
@@ -87,14 +84,18 @@ int main(int argc, char **argv)
     readInToMatrix(in, "/home/jjho/workspace/data/picking_list.txt", path);
     std::cout << "save" << std::endl;
     ros::Rate loop_rate(1);
+    ROS_INFO("%d",path.size());
     while (ros::ok())
     {
         pcl_pub.publish(output);
+        ROS_INFO("ok");
         for (int i = 0; i < path.size(); i++)
         {
             float x = path[i].x;
             float y = path[i].y;
-            cv::Mat BEV = pcb.pointcloud_box(cloud.makeShared(), 10, x, y);
+            ROS_INFO("x = %f \n", x);
+            ROS_INFO("y = %f \n", y);
+            cv::Mat BEV = pcb.pointcloud_box(cloud.makeShared(), 2, x, y);
 
             ROS_INFO("i = %d \n", i);
 

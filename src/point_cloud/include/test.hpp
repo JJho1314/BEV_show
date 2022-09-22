@@ -51,14 +51,14 @@ class point_cloud_box
 public:
     void createROSPubSub();
 
-    cv::Mat pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, float offset_x, float offset_y);
+    cv::Mat pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y);
 
 private:
     void cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg);
 
     int scale_to_255(const float &H, const float &min, const float &max);
 
-    void point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, const int min, const int max, std::string axis, bool setFilterLimitsNegative);
+    void point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative);
 
     // 图像旋转
     ///@ angle 要旋转的角度

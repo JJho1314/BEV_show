@@ -168,7 +168,24 @@ void send_bbox_message(targetInfo temp)
     out_message.objects.push_back(obj);
 }
 
-cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, float offset_x, float offset_y)
+void point_cloud_box::point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative)
+{
+    pcl::PassThrough<pcl::PointXYZ> filter;
+    filter.setInputCloud(cloud);
+    filter.setFilterFieldName(axis);
+
+    filter.setFilterLimits(min, max);
+
+    if (setFilterLimitsNegative == true)
+    {
+        filter.setFilterLimitsNegative(true);
+    }
+
+    filter.filter(*cloud);
+    std::cout<<min<<std::endl;
+}
+
+cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y)
 {
     cv::Mat BEV(BEV_height, BEV_width, CV_8UC1, cv::Scalar(0));
     // pcl::PointXYZ min; //
@@ -177,16 +194,21 @@ cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Pt
     pcl::PointCloud<pcl::PointXYZ>::Ptr clouds_out(new pcl::PointCloud<pcl::PointXYZ>); // 建立一个点云指针
 
     pcl::copyPointCloud(*cloud_in, *clouds_out);
-    // pcl::getMinMax3D(*clouds_out, min, max);
 
+    // pcl::getMinMax3D(*clouds_out, min, max);
+    std::cout<<offset_x<<std::endl;
+    std::cout<<offset_y<<std::endl;
     point_filter(clouds_out, offset_x - scale * (Box_width / 2), offset_x + scale * (Box_width / 2), "x", false);
+     std::cout<<clouds_out->points.size()<<std::endl;
     point_filter(clouds_out, offset_y - scale * (Box_height / 2), offset_y + scale * (Box_height / 2), "y", false);
     point_filter(clouds_out, min_z_, pass_z_, "z", false);
+   
 
     for (int i = 0; i < clouds_out->points.size(); i++)
     {
         int x_img = int((clouds_out->points[i].x + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
         int y_img = int((clouds_out->points[i].y + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+        // std::cout << x_img << "," << y_img << "  ";
         if (x_img < BEV_width && y_img < BEV_height)
             BEV.at<uchar>(y_img, x_img) = scale_to_255(clouds_out->points[i].z, min_z_, pass_z_);
 
@@ -220,21 +242,7 @@ void point_cloud_box::Rotate(const cv::Mat &srcImage, cv::Mat &destImage, double
     cv::warpAffine(srcImage, destImage, M, cv::Size(srcImage.cols, srcImage.rows)); //仿射变换
 }
 
-void point_cloud_box::point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, const int min, const int max, std::string axis, bool setFilterLimitsNegative)
-{
-    pcl::PassThrough<pcl::PointXYZ> filter;
-    filter.setInputCloud(cloud);
-    filter.setFilterFieldName(axis);
 
-    filter.setFilterLimits(min, max);
-
-    if (setFilterLimitsNegative == true)
-    {
-        filter.setFilterLimitsNegative(true);
-    }
-
-    filter.filter(*cloud);
-}
 
 void point_cloud_box::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg)
 {
