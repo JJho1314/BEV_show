@@ -8,8 +8,8 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(PCL  1.9 REQUIRED)
-find_package(OpenCV 4  REQUIRED)
+find_package(PCL 1.8 REQUIRED)
+find_package(OpenCV 3 REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package( OpenMP REQUIRED)
 if(OPENMP_FOUND)
@@ -33,15 +33,6 @@ find_package(catkin REQUIRED COMPONENTS
   roslaunch
   cv_bridge
   image_transport
-  jsk_rviz_plugins
-  jsk_recognition_msgs
-)
-
-generate_messages(
-        DEPENDENCIES
-        std_msgs
-        geometry_msgs
-        sensor_msgs
 )
 
 catkin_package(
