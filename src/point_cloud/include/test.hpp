@@ -9,6 +9,13 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <image_transport/image_transport.h>
 
+struct position
+{
+    float x;
+    float y;
+    float z;
+};
+
 typedef struct
 {
     int target_header;
@@ -44,10 +51,10 @@ class point_cloud_box
 public:
     void createROSPubSub();
 
+    cv::Mat pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, float offset_x, float offset_y);
+
 private:
     void cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg);
-
-    cv::Mat pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale);
 
     int scale_to_255(const float &H, const float &min, const float &max);
 
@@ -68,7 +75,7 @@ private:
     int BEV_height = 720;
     int BEV_width = 1280;
     int angle_ = 0;
-    int offset_x = 0;
-    int offset_y = 0;
-    int offset_z;
+    int offset_x_ = 0;
+    int offset_y_ = 0;
+    int offset_z_ = 0;
 };

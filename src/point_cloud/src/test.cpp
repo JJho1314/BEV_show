@@ -168,7 +168,7 @@ void send_bbox_message(targetInfo temp)
     out_message.objects.push_back(obj);
 }
 
-cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale)
+cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, float offset_x, float offset_y)
 {
     cv::Mat BEV(BEV_height, BEV_width, CV_8UC1, cv::Scalar(0));
     // pcl::PointXYZ min; //
@@ -249,7 +249,7 @@ void point_cloud_box::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_m
     // transform.rotate(Eigen::AngleAxisf(theta, Eigen::Vector3f::UnitX())); //同理，UnitX(),绕X轴；UnitY(),绕Y轴
     // pcl::transformPointCloud(*pc_curr, *transformed_cloud, transform);
 
-    cv::Mat BEV = pointcloud_box(pc_curr, 10);
+    cv::Mat BEV = pointcloud_box(pc_curr, 10, offset_x_, offset_y_);
 
     targetInfo temp;
 
