@@ -182,7 +182,7 @@ void point_cloud_box::point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, c
     }
 
     filter.filter(*cloud);
-    std::cout<<min<<std::endl;
+
 }
 
 cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y)
@@ -196,10 +196,8 @@ cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Pt
     pcl::copyPointCloud(*cloud_in, *clouds_out);
 
     // pcl::getMinMax3D(*clouds_out, min, max);
-    std::cout<<offset_x<<std::endl;
-    std::cout<<offset_y<<std::endl;
+
     point_filter(clouds_out, offset_x - scale * (Box_width / 2), offset_x + scale * (Box_width / 2), "x", false);
-     std::cout<<clouds_out->points.size()<<std::endl;
     point_filter(clouds_out, offset_y - scale * (Box_height / 2), offset_y + scale * (Box_height / 2), "y", false);
     point_filter(clouds_out, min_z_, pass_z_, "z", false);
    
@@ -214,7 +212,6 @@ cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Pt
 
         // std::cout << x_img << "," << y_img << "  ";
     }
-    std::cout << "pointcloud_box" << std::endl;
     cv::flip(BEV, BEV, 1);
 
     cv::applyColorMap(BEV, BEV, cv::COLORMAP_JET);

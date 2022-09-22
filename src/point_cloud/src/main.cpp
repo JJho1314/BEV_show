@@ -31,18 +31,33 @@ void readInToMatrix(std::fstream &in, std::string FilePath, std::vector<position
         std::vector<double> nums;
         position pos;
         // string->char *
-        char *s_input = (char *)buff.c_str();
-        const char *split = "，";
-        // 以‘，’为分隔符拆分字符串
-        char *p = strtok(s_input, split);
-        double a;
-        while (p != NULL)
+        // char *s_input = (char *)buff.c_str();
+        // const char *split = "，";
+        // // 以‘，’为分隔符拆分字符串
+        // char *p = strtok(s_input, split);
+        // double a;
+        // while (p != NULL)
+        // {
+        //     // char * -> int
+        //     a = atof(p);
+        //     nums.push_back(a);
+        //     p = strtok(NULL, split);
+        // } // end while
+
+        for (int i = 0; i < buff.size(); ++i)
         {
-            // char * -> int
-            a = atof(p);
-            nums.push_back(a);
-            p = strtok(NULL, split);
-        } // end while
+            if (buff[i] == ',')
+            {
+                buff[i] = ' ';
+            }
+        }
+        std::istringstream out(buff);
+        std::string str;
+        while (out >> str)
+        {
+            nums.push_back(std::stof(str));
+        }
+
         pos.x = nums[0];
         pos.y = nums[1];
         pos.z = nums[2];
@@ -73,7 +88,7 @@ int main(int argc, char **argv)
 
     pcl::PointCloud<pcl::PointXYZ> cloud;
 
-    pcl::io::loadPCDFile("/home/jjho/workspace/data/outdoor-208.pcd", cloud); //修改自己pcd文件所在路径
+    pcl::io::loadPCDFile("/home/nvidia/workspace/data/outdoor-208.pcd", cloud); //修改自己pcd文件所在路径
 
     pcl::toROSMsg(cloud, output);
 
@@ -81,10 +96,10 @@ int main(int argc, char **argv)
 
     std::vector<position> path;
     std::fstream in;
-    readInToMatrix(in, "/home/jjho/workspace/data/picking_list.txt", path);
+    readInToMatrix(in, "/home/nvidia/workspace/data/picking_list.txt", path);
     std::cout << "save" << std::endl;
     ros::Rate loop_rate(1);
-    ROS_INFO("%d",path.size());
+    ROS_INFO("%d", path.size());
     while (ros::ok())
     {
         pcl_pub.publish(output);
@@ -93,15 +108,13 @@ int main(int argc, char **argv)
         {
             float x = path[i].x;
             float y = path[i].y;
-            ROS_INFO("x = %f \n", x);
-            ROS_INFO("y = %f \n", y);
-            cv::Mat BEV = pcb.pointcloud_box(cloud.makeShared(), 2, x, y);
 
-            ROS_INFO("i = %d \n", i);
+            cv::Mat BEV = pcb.pointcloud_box(cloud.makeShared(), 5, x, y);
 
             sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
 
             obj_pub.publish(msg);
+            ros::Duration(0.2).sleep();
         }
 
         ros::spinOnce();
