@@ -88,7 +88,7 @@ int main(int argc, char **argv)
 
     pcl::PointCloud<pcl::PointXYZ> cloud;
 
-    pcl::io::loadPCDFile("/home/nvidia/workspace/data/outdoor-208.pcd", cloud); //修改自己pcd文件所在路径
+    pcl::io::loadPCDFile("/home/nvidia/workspace/BEV_show/src/point_cloud/data/outdoor-208.pcd", cloud); //修改自己pcd文件所在路径
 
     pcl::toROSMsg(cloud, output);
 
@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 
     std::vector<position> path;
     std::fstream in;
-    readInToMatrix(in, "/home/nvidia/workspace/data/picking_list.txt", path);
+    readInToMatrix(in, "/home/nvidia/workspace/BEV_show/src/point_cloud/data/picking_list.txt", path);
     std::cout << "save" << std::endl;
     ros::Rate loop_rate(1);
     ROS_INFO("%d", path.size());
@@ -108,8 +108,9 @@ int main(int argc, char **argv)
         {
             float x = path[i].x;
             float y = path[i].y;
+            float z = path[i].z;
 
-            cv::Mat BEV = pcb.pointcloud_box(cloud.makeShared(), 5, x, y);
+            cv::Mat BEV = pcb.pointcloud_box(cloud.makeShared(), 4, x, y, z);
 
             sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
 

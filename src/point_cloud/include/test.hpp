@@ -51,7 +51,7 @@ class point_cloud_box
 public:
     void createROSPubSub();
 
-    cv::Mat pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y);
+    cv::Mat pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z);
 
 private:
     void cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg);
@@ -68,9 +68,9 @@ private:
     image_transport::Publisher obj_pub;
     ros::Subscriber Img_sub;
 
-    float min_z_ = -2.0;
-    float pass_z_ = 0.5;
-    int Box_height = 9;
+    float min_z_ = -6.0;
+    float pass_z_ = 2.0;
+    int Box_height = 10;
     int Box_width = 16;
     int BEV_height = 720;
     int BEV_width = 1280;

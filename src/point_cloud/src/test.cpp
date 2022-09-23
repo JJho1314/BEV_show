@@ -182,32 +182,30 @@ void point_cloud_box::point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, c
     }
 
     filter.filter(*cloud);
-
 }
 
-cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y)
+cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z)
 {
     cv::Mat BEV(BEV_height, BEV_width, CV_8UC1, cv::Scalar(0));
-    // pcl::PointXYZ min; //
-    // pcl::PointXYZ max; //
+    pcl::PointXYZ min; //
+    pcl::PointXYZ max; //
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr clouds_out(new pcl::PointCloud<pcl::PointXYZ>); // 建立一个点云指针
 
     pcl::copyPointCloud(*cloud_in, *clouds_out);
 
-    // pcl::getMinMax3D(*clouds_out, min, max);
+    pcl::getMinMax3D(*clouds_out, min, max);
 
     point_filter(clouds_out, offset_x - scale * (Box_width / 2), offset_x + scale * (Box_width / 2), "x", false);
     point_filter(clouds_out, offset_y - scale * (Box_height / 2), offset_y + scale * (Box_height / 2), "y", false);
-    point_filter(clouds_out, min_z_, pass_z_, "z", false);
-   
+    point_filter(clouds_out, min.z, pass_z_, "z", false);
 
     for (int i = 0; i < clouds_out->points.size(); i++)
     {
         int x_img = int((clouds_out->points[i].x + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
         int y_img = int((clouds_out->points[i].y + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
         // std::cout << x_img << "," << y_img << "  ";
-        if (x_img < BEV_width && y_img < BEV_height)
+        if (x_img < BEV_width && y_img < BEV_height && x_img > 0 && y_img > 0)
             BEV.at<uchar>(y_img, x_img) = scale_to_255(clouds_out->points[i].z, min_z_, pass_z_);
 
         // std::cout << x_img << "," << y_img << "  ";
@@ -217,6 +215,8 @@ cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Pt
     cv::applyColorMap(BEV, BEV, cv::COLORMAP_JET);
 
     Rotate(BEV, BEV, angle_);
+
+    cv::rectangle(BEV, cv::Rect(620, 350, 40, 20), cv::Scalar(0, 0, 255),3);
 
     sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
 
@@ -239,8 +239,6 @@ void point_cloud_box::Rotate(const cv::Mat &srcImage, cv::Mat &destImage, double
     cv::warpAffine(srcImage, destImage, M, cv::Size(srcImage.cols, srcImage.rows)); //仿射变换
 }
 
-
-
 void point_cloud_box::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg)
 {
     double start_time = ros::Time::now().toSec();
@@ -254,7 +252,7 @@ void point_cloud_box::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_m
     // transform.rotate(Eigen::AngleAxisf(theta, Eigen::Vector3f::UnitX())); //同理，UnitX(),绕X轴；UnitY(),绕Y轴
     // pcl::transformPointCloud(*pc_curr, *transformed_cloud, transform);
 
-    cv::Mat BEV = pointcloud_box(pc_curr, 10, offset_x_, offset_y_);
+    cv::Mat BEV = pointcloud_box(pc_curr, 10, offset_x_, offset_y_, offset_z_);
 
     targetInfo temp;
 
