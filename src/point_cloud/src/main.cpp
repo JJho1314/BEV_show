@@ -88,7 +88,7 @@ int main(int argc, char **argv)
 
     pcl::PointCloud<pcl::PointXYZ> cloud;
 
-    pcl::io::loadPCDFile("/home/nvidia/workspace/BEV_show/src/point_cloud/data/outdoor-208.pcd", cloud); //修改自己pcd文件所在路径
+    pcl::io::loadPCDFile("/home/jjho/workspace/BEV_show/src/point_cloud/data/outdoor-208.pcd", cloud); //修改自己pcd文件所在路径
 
     pcl::toROSMsg(cloud, output);
 
@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 
     std::vector<position> path;
     std::fstream in;
-    readInToMatrix(in, "/home/nvidia/workspace/BEV_show/src/point_cloud/data/picking_list.txt", path);
+    readInToMatrix(in, "/home/jjho/workspace/BEV_show/src/point_cloud/data/picking_list.txt", path);
     std::cout << "save" << std::endl;
     ros::Rate loop_rate(1);
     ROS_INFO("%d", path.size());
