@@ -216,7 +216,7 @@ cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Pt
 
     Rotate(BEV, BEV, angle_);
 
-    cv::rectangle(BEV, cv::Rect(620, 350, 40, 20), cv::Scalar(0, 0, 255),3);
+    cv::rectangle(BEV, cv::Rect(620, 350, 40, 20), cv::Scalar(0, 0, 255), 3);
 
     sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
 
@@ -269,6 +269,11 @@ void point_cloud_box::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_m
     printf("deal this frame takes %f ms\n\n", (end_time - start_time) * 1000);
 }
 
+void point_cloud_box::gpsHandler(const nav_msgs::Odometry::ConstPtr &gpsMsg)
+{
+
+}
+
 void point_cloud_box::createROSPubSub()
 {
     image_transport::ImageTransport it(nh_);
@@ -276,4 +281,8 @@ void point_cloud_box::createROSPubSub()
     obj_pub = it.advertise("image", 100);
 
     Img_sub = nh_.subscribe("/livox/lidar", 100, &point_cloud_box::cloudCallback, this); // image_raw
+
+    subGPS = nh_.subscribe<nav_msgs::Odometry>(gpsTopic, 200, &point_cloud_box::gpsHandler, this, ros::TransportHints().tcpNoDelay());
+
+    subcontrol = 
 }

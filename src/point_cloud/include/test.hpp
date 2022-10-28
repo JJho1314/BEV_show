@@ -7,6 +7,9 @@
 #include "opencv2/highgui.hpp"
 #include "opencv2/videoio.hpp"
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/NavSatFix.h>
+#include <nav_msgs/Odometry.h>
+#include <nav_msgs/Path.h>
 #include <image_transport/image_transport.h>
 
 struct position
@@ -56,6 +59,8 @@ public:
 private:
     void cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg);
 
+    void gpsHandler(const nav_msgs::Odometry::ConstPtr &gpsMsg);
+
     int scale_to_255(const float &H, const float &min, const float &max);
 
     void point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative);
@@ -67,6 +72,11 @@ private:
     ros::NodeHandle nh_;
     image_transport::Publisher obj_pub;
     ros::Subscriber Img_sub;
+    ros::Subscriber subGPS;
+    ros::Subscriber subcontrol;
+
+    std::string gpsTopic = "odom";
+    std::string controlTopic = "control_map";
 
     float min_z_ = -6.0;
     float pass_z_ = 2.0;

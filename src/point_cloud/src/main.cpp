@@ -94,33 +94,13 @@ int main(int argc, char **argv)
 
     output.header.frame_id = "livox_frame";
 
-    std::vector<position> path;
-    std::fstream in;
-    readInToMatrix(in, "/home/jjho/workspace/BEV_show/src/point_cloud/data/picking_list.txt", path);
-    std::cout << "save" << std::endl;
-    ros::Rate loop_rate(1);
-    ROS_INFO("%d", path.size());
-    while (ros::ok())
-    {
-        pcl_pub.publish(output);
-        ROS_INFO("ok");
-        for (int i = 0; i < path.size(); i++)
-        {
-            float x = path[i].x;
-            float y = path[i].y;
-            float z = path[i].z;
+    // std::vector<position> path;
+    // std::fstream in;
+    // readInToMatrix(in, "/home/jjho/workspace/BEV_show/src/point_cloud/data/picking_list.txt", path);
 
-            cv::Mat BEV = pcb.pointcloud_box(cloud.makeShared(), 4, x, y, z);
 
-            sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
 
-            obj_pub.publish(msg);
-            ros::Duration(0.2).sleep();
-        }
 
-        ros::spinOnce();
-        loop_rate.sleep();
-    }
 
     return (0);
 }
