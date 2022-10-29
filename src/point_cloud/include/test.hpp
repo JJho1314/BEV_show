@@ -11,6 +11,7 @@
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <image_transport/image_transport.h>
+#include <std_msgs/Float32MultiArray.h>
 
 struct position
 {
@@ -18,6 +19,15 @@ struct position
     float y;
     float z;
 };
+
+struct box
+{
+    float x;
+    float y;
+    float height;
+    float width;
+};
+
 
 typedef struct
 {
@@ -49,17 +59,19 @@ int getSocketData(targetInfo temp);
 
 int initSocketData();
 
-class point_cloud_box
+class point_cloud_BEV
 {
 public:
     void createROSPubSub();
 
-    cv::Mat pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z);
+    cv::Mat Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z, std::vector<box> BBoxs);
 
 private:
     void cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg);
 
     void gpsHandler(const nav_msgs::Odometry::ConstPtr &gpsMsg);
+
+    void controlHandler(const std_msgs::Float32MultiArray::ConstPtr &controlMsg);
 
     int scale_to_255(const float &H, const float &min, const float &max);
 
@@ -78,8 +90,11 @@ private:
     std::string gpsTopic = "odom";
     std::string controlTopic = "control_map";
 
+    std::vector<box> BBoxs; 
+
     float min_z_ = -6.0;
     float pass_z_ = 2.0;
+    float scale_ = 10;
     int Box_height = 10;
     int Box_width = 16;
     int BEV_height = 720;

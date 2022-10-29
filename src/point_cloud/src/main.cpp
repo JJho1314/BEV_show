@@ -70,7 +70,7 @@ void readInToMatrix(std::fstream &in, std::string FilePath, std::vector<position
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "point_cloud_box");
+    ros::init(argc, argv, "point_cloud_BEV");
 
     ros::NodeHandle nh;
 
@@ -78,7 +78,7 @@ int main(int argc, char **argv)
 
     initSocketData();
 
-    point_cloud_box pcb;
+    point_cloud_BEV pcb;
 
     ros::Publisher pcl_pub = nh.advertise<sensor_msgs::PointCloud2>("pcl_output", 1);
 

@@ -168,7 +168,7 @@ void send_bbox_message(targetInfo temp)
     out_message.objects.push_back(obj);
 }
 
-void point_cloud_box::point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative)
+void point_cloud_BEV::point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative)
 {
     pcl::PassThrough<pcl::PointXYZ> filter;
     filter.setInputCloud(cloud);
@@ -184,7 +184,7 @@ void point_cloud_box::point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, c
     filter.filter(*cloud);
 }
 
-cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z)
+cv::Mat point_cloud_BEV::Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z, std::vector<box> BBoxs)
 {
     cv::Mat BEV(BEV_height, BEV_width, CV_8UC1, cv::Scalar(0));
     pcl::PointXYZ min; //
@@ -210,13 +210,16 @@ cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Pt
 
         // std::cout << x_img << "," << y_img << "  ";
     }
+    for (int i = 0; i < BBoxs.size(); i++)
+    {
+        cv::rectangle(BEV, cv::Rect(BBoxs[i].x, BBoxs[i].y, BBoxs[i].height, BBoxs[i].width), cv::Scalar(0, 0, 255), 3);
+    }
+
     cv::flip(BEV, BEV, 1);
 
     cv::applyColorMap(BEV, BEV, cv::COLORMAP_JET);
 
     Rotate(BEV, BEV, angle_);
-
-    cv::rectangle(BEV, cv::Rect(620, 350, 40, 20), cv::Scalar(0, 0, 255), 3);
 
     sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
 
@@ -225,21 +228,21 @@ cv::Mat point_cloud_box::pointcloud_box(const pcl::PointCloud<pcl::PointXYZ>::Pt
     return BEV;
 }
 
-int point_cloud_box::scale_to_255(const float &H, const float &min, const float &max)
+int point_cloud_BEV::scale_to_255(const float &H, const float &min, const float &max)
 {
     return int(((H - min) / (max - min)) * 255);
 }
 
 // 图像旋转
 ///@ angle 要旋转的角度
-void point_cloud_box::Rotate(const cv::Mat &srcImage, cv::Mat &destImage, double angle)
+void point_cloud_BEV::Rotate(const cv::Mat &srcImage, cv::Mat &destImage, double angle)
 {
     cv::Point2f center(srcImage.cols / 2, srcImage.rows / 2);                       //中心
     cv::Mat M = cv::getRotationMatrix2D(center, angle, 1);                          //计算旋转的仿射变换矩阵
     cv::warpAffine(srcImage, destImage, M, cv::Size(srcImage.cols, srcImage.rows)); //仿射变换
 }
 
-void point_cloud_box::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg)
+void point_cloud_BEV::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg)
 {
     double start_time = ros::Time::now().toSec();
     pcl::PointCloud<pcl::PointXYZ>::Ptr pc_curr(new pcl::PointCloud<pcl::PointXYZ>);           // 建立一个点云指针
@@ -252,7 +255,7 @@ void point_cloud_box::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_m
     // transform.rotate(Eigen::AngleAxisf(theta, Eigen::Vector3f::UnitX())); //同理，UnitX(),绕X轴；UnitY(),绕Y轴
     // pcl::transformPointCloud(*pc_curr, *transformed_cloud, transform);
 
-    cv::Mat BEV = pointcloud_box(pc_curr, 10, offset_x_, offset_y_, offset_z_);
+    cv::Mat BEV = Point_cloud_BEV(pc_curr, scale_, offset_x_, offset_y_, offset_z_, BBoxs);
 
     targetInfo temp;
 
@@ -269,20 +272,29 @@ void point_cloud_box::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_m
     printf("deal this frame takes %f ms\n\n", (end_time - start_time) * 1000);
 }
 
-void point_cloud_box::gpsHandler(const nav_msgs::Odometry::ConstPtr &gpsMsg)
+void point_cloud_BEV::gpsHandler(const nav_msgs::Odometry::ConstPtr &gpsMsg)
 {
-
+    offset_x_ = gpsMsg->pose.pose.position.x;
+    offset_y_ = gpsMsg->pose.pose.position.y;
+    offset_z_ = gpsMsg->pose.pose.position.z;
 }
 
-void point_cloud_box::createROSPubSub()
+void point_cloud_BEV::controlHandler(const std_msgs::Float32MultiArray::ConstPtr &controlMsg)
+{
+    offset_x_ = offset_x_ + controlMsg->data[0];
+    offset_y_ = offset_y_ + controlMsg->data[1];
+    scale_ = controlMsg->data[2];
+}
+
+void point_cloud_BEV::createROSPubSub()
 {
     image_transport::ImageTransport it(nh_);
 
     obj_pub = it.advertise("image", 100);
 
-    Img_sub = nh_.subscribe("/livox/lidar", 100, &point_cloud_box::cloudCallback, this); // image_raw
+    Img_sub = nh_.subscribe("/livox/lidar", 100, &point_cloud_BEV::cloudCallback, this); // image_raw
 
-    subGPS = nh_.subscribe<nav_msgs::Odometry>(gpsTopic, 200, &point_cloud_box::gpsHandler, this, ros::TransportHints().tcpNoDelay());
+    subGPS = nh_.subscribe<nav_msgs::Odometry>(gpsTopic, 200, &point_cloud_BEV::gpsHandler, this, ros::TransportHints().tcpNoDelay());
 
-    subcontrol = 
+    subcontrol = nh_.subscribe<std_msgs::Float32MultiArray>(controlTopic, 1, &point_cloud_BEV::controlHandler, this, ros::TransportHints().tcpNoDelay());
 }
