@@ -13,6 +13,9 @@
 #include <image_transport/image_transport.h>
 #include <std_msgs/Float32MultiArray.h>
 
+#include "autoware_msgs/DetectedObjectArray.h"
+#include "autoware_msgs/DetectedObject.h"
+
 struct position
 {
     float x;
@@ -22,12 +25,15 @@ struct position
 
 struct box
 {
-    float x;
-    float y;
-    float height;
-    float width;
+    float x1;
+    float y1;
+    float x2;
+    float y2;
+    float x3;
+    float y3;
+    float x4;
+    float y4;
 };
-
 
 typedef struct
 {
@@ -73,6 +79,8 @@ private:
 
     void controlHandler(const std_msgs::Float32MultiArray::ConstPtr &controlMsg);
 
+    void detectHandler(const autoware_msgs::DetectedObjectArray::ConstPtr &input_detections);
+
     int scale_to_255(const float &H, const float &min, const float &max);
 
     void point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative);
@@ -86,11 +94,13 @@ private:
     ros::Subscriber Img_sub;
     ros::Subscriber subGPS;
     ros::Subscriber subcontrol;
+    ros::Subscriber subDetect;
 
     std::string gpsTopic = "odom";
     std::string controlTopic = "control_map";
+    std::string detectTopic = "/detection/final_result/objects";
 
-    std::vector<box> BBoxs; 
+    std::vector<box> detect_BBoxs;
 
     float min_z_ = -6.0;
     float pass_z_ = 2.0;

@@ -210,9 +210,21 @@ cv::Mat point_cloud_BEV::Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::P
 
         // std::cout << x_img << "," << y_img << "  ";
     }
+
     for (int i = 0; i < BBoxs.size(); i++)
     {
-        cv::rectangle(BEV, cv::Rect(BBoxs[i].x, BBoxs[i].y, BBoxs[i].height, BBoxs[i].width), cv::Scalar(0, 0, 255), 3);
+        int x1 = int((BBoxs[i].x1 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
+        int y1 = int((BBoxs[i].y1 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+        int x2 = int((BBoxs[i].x2 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
+        int y2 = int((BBoxs[i].y2 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+        int x3 = int((BBoxs[i].x3 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
+        int y3 = int((BBoxs[i].y3 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+        int x4 = int((BBoxs[i].x4 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
+        int y4 = int((BBoxs[i].y4 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+        cv::line(BEV, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 0, 255), 3);
+        cv::line(BEV, cv::Point(x2, y2), cv::Point(x3, y3), cv::Scalar(0, 0, 255), 3);
+        cv::line(BEV, cv::Point(x3, y3), cv::Point(x4, y4), cv::Scalar(0, 0, 255), 3);
+        cv::line(BEV, cv::Point(x4, y4), cv::Point(x1, y1), cv::Scalar(0, 0, 255), 3);
     }
 
     cv::flip(BEV, BEV, 1);
@@ -255,7 +267,7 @@ void point_cloud_BEV::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_m
     // transform.rotate(Eigen::AngleAxisf(theta, Eigen::Vector3f::UnitX())); //同理，UnitX(),绕X轴；UnitY(),绕Y轴
     // pcl::transformPointCloud(*pc_curr, *transformed_cloud, transform);
 
-    cv::Mat BEV = Point_cloud_BEV(pc_curr, scale_, offset_x_, offset_y_, offset_z_, BBoxs);
+    cv::Mat BEV = Point_cloud_BEV(pc_curr, scale_, offset_x_, offset_y_, offset_z_, detect_BBoxs);
 
     targetInfo temp;
 
@@ -286,6 +298,44 @@ void point_cloud_BEV::controlHandler(const std_msgs::Float32MultiArray::ConstPtr
     scale_ = controlMsg->data[2];
 }
 
+void point_cloud_BEV::detectHandler(const autoware_msgs::DetectedObjectArray::ConstPtr &input_detections)
+{
+    std::vector<box> detect_BBoxs;
+    box detect_box;
+    double half_l, half_w;
+    tf::Quaternion RQ2;
+    double roll, pitch, yaw;
+    Eigen::Vector3d bottom_quad[4];
+    for (int obj = 0; obj < input_detections->objects.size(); ++obj)
+    {
+        half_l = input_detections->objects[obj].dimensions.x / 2;
+        half_w = input_detections->objects[obj].dimensions.y / 2;
+        Eigen::Vector3d center(input_detections->objects[obj].pose.position.x,
+                               input_detections->objects[obj].pose.position.y,
+                               input_detections->objects[obj].pose.position.z);
+
+        tf::quaternionMsgToTF(input_detections->objects[obj].pose.orientation, RQ2);
+        tf::Matrix3x3(RQ2).getRPY(roll, pitch, yaw);
+
+        Eigen::Vector3d ldir(cos(yaw), sin(yaw), 0);
+        Eigen::Vector3d odir(-ldir[1], ldir[0], 0);
+        bottom_quad[0] = center + ldir * -half_l + odir * -half_w; // A(-half_l, -half_w)
+        bottom_quad[1] = center + ldir * -half_l + odir * half_w;  // B(-half_l, half_w)
+        bottom_quad[2] = center + ldir * half_l + odir * half_w;   // C(half_l, half_w)
+        bottom_quad[3] = center + ldir * half_l + odir * -half_w;  // D(half_l, -half_w)
+
+        detect_box.x1 = bottom_quad[0](0);
+        detect_box.y1 = bottom_quad[0](1);
+        detect_box.x2 = bottom_quad[1](0);
+        detect_box.y2 = bottom_quad[1](1);
+        detect_box.x3 = bottom_quad[2](0);
+        detect_box.y3 = bottom_quad[2](1);
+        detect_box.x4 = bottom_quad[3](0);
+        detect_box.y4 = bottom_quad[3](1);
+        detect_BBoxs.push_back(detect_box);
+    }
+}
+
 void point_cloud_BEV::createROSPubSub()
 {
     image_transport::ImageTransport it(nh_);
@@ -296,5 +346,7 @@ void point_cloud_BEV::createROSPubSub()
 
     subGPS = nh_.subscribe<nav_msgs::Odometry>(gpsTopic, 200, &point_cloud_BEV::gpsHandler, this, ros::TransportHints().tcpNoDelay());
 
-    subcontrol = nh_.subscribe<std_msgs::Float32MultiArray>(controlTopic, 1, &point_cloud_BEV::controlHandler, this, ros::TransportHints().tcpNoDelay());
+    subcontrol = nh_.subscribe<std_msgs::Float32MultiArray>(controlTopic, 200, &point_cloud_BEV::controlHandler, this, ros::TransportHints().tcpNoDelay());
+
+    subDetect = nh_.subscribe<autoware_msgs::DetectedObjectArray>(detectTopic, 200, &point_cloud_BEV::detectHandler, this, ros::TransportHints().tcpNoDelay());
 }
