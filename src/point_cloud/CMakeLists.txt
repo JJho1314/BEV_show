@@ -23,6 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  livox_ros_driver
   pcl_conversions 
   autoware_msgs    
   pcl_ros

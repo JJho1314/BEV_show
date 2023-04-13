@@ -1,5 +1,4 @@
 #include "test.hpp"
-
 #include <iostream>
 #include <Eigen/Eigen>
 #include <Eigen/Dense>
@@ -24,7 +23,6 @@
 #include <image_transport/image_transport.h>
 #include <autoware_msgs/DetectedObject.h>
 #include <autoware_msgs/DetectedObjectArray.h>
-
 #include "h264_decoder.h"
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -44,6 +42,8 @@ int sock_fd;
 int len;
 bool set_rect = false;
 std::string command;
+PointCloudXYZI pl_full;
+PointCloudXYZI pl_buff[128]; //maximum 128 line lidar
 
 int hdr_stat = 0;
 int flip_stat = 0;
@@ -184,6 +184,70 @@ void point_cloud_BEV::point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, c
     filter.filter(*cloud);
 }
 
+void point_cloud_BEV::RGB_point_filter(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative)
+{
+    pcl::PassThrough<pcl::PointXYZRGB> filter;
+    filter.setInputCloud(cloud);
+    filter.setFilterFieldName(axis);
+
+    filter.setFilterLimits(min, max);
+
+    if (setFilterLimitsNegative == true)
+    {
+        filter.setFilterLimitsNegative(true);
+    }
+
+    filter.filter(*cloud);
+}
+
+void point_cloud_BEV::livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg)
+{
+    pl_full.clear();
+    int plsize = msg->point_num;
+    pl_full.resize(plsize);
+
+    //清空缓存内的点云并预留足够空间
+    for(int i=0; i<6; i++)
+    {
+        pl_buff[i].clear();
+        pl_buff[i].reserve(plsize);
+    }
+    omp_set_num_threads(12); //加速
+#pragma omp parallel for
+    for(uint i=1; i<plsize; i++)
+    {
+      if((msg->points[i].line < 6) && ((msg->points[i].tag & 0x30) == 0x10 || (msg->points[i].tag & 0x30) == 0x00))
+      {
+        pl_full[i].x = msg->points[i].x;
+        pl_full[i].y = msg->points[i].y;
+        pl_full[i].z = msg->points[i].z;
+        pl_full[i].intensity = msg->points[i].reflectivity;
+        pl_full[i].curvature = msg->points[i].offset_time / float(1000000); //use curvature as time of each laser points
+
+        std::cout << "intensity: " << pl_full[i].intensity << std::endl;
+
+        bool is_new = false;
+        //与前一点间距太小则忽略该点，间距太小不利于特征提取
+        if((abs(pl_full[i].x - pl_full[i-1].x) > 1e-7) 
+            || (abs(pl_full[i].y - pl_full[i-1].y) > 1e-7)
+            || (abs(pl_full[i].z - pl_full[i-1].z) > 1e-7))
+        {
+          pl_buff[msg->points[i].line].push_back(pl_full[i]);
+        }
+      }
+    }
+}
+
+void point_cloud_BEV::transform_cloud(const pcl::PointCloud<PointType>::Ptr &cloud_in, const pcl::PointCloud<PointType>::Ptr &transformed_cloud, const position target_pos, const angle target_angle)
+{
+    Eigen::Affine3f transform = Eigen::Affine3f::Identity();
+    transform.rotate(Eigen::AngleAxisf(target_angle.yaw, Eigen::Vector3f::UnitZ())); //同理，UnitX(),绕X轴；UnitY(),绕Y轴
+    transform.rotate(Eigen::AngleAxisf(target_angle.pitch, Eigen::Vector3f::UnitX())); //同理，UnitX(),绕X轴；UnitY(),绕Y轴
+    transform.rotate(Eigen::AngleAxisf(target_angle.roll, Eigen::Vector3f::UnitY())); //同理，UnitX(),绕X轴；UnitY(),绕Y轴
+    transform.translation() << target_pos.x, target_pos.y, target_pos.z;
+    pcl::transformPointCloud(*cloud_in, *transformed_cloud, transform);
+}
+
 cv::Mat point_cloud_BEV::Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z, std::vector<box> BBoxs)
 {
     cv::Mat BEV(BEV_height, BEV_width, CV_8UC1, cv::Scalar(0));
@@ -198,8 +262,10 @@ cv::Mat point_cloud_BEV::Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::P
 
     point_filter(clouds_out, offset_x - scale * (Box_width / 2), offset_x + scale * (Box_width / 2), "x", false);
     point_filter(clouds_out, offset_y - scale * (Box_height / 2), offset_y + scale * (Box_height / 2), "y", false);
-    point_filter(clouds_out, min.z, pass_z_, "z", false);
+    point_filter(clouds_out, min_z_, pass_z_, "z", false);
 
+    omp_set_num_threads(12); //加速
+#pragma omp parallel for
     for (int i = 0; i < clouds_out->points.size(); i++)
     {
         int x_img = int((clouds_out->points[i].x + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
@@ -210,22 +276,23 @@ cv::Mat point_cloud_BEV::Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::P
 
         // std::cout << x_img << "," << y_img << "  ";
     }
-
-    for (int i = 0; i < BBoxs.size(); i++)
-    {
-        int x1 = int((BBoxs[i].x1 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
-        int y1 = int((BBoxs[i].y1 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
-        int x2 = int((BBoxs[i].x2 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
-        int y2 = int((BBoxs[i].y2 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
-        int x3 = int((BBoxs[i].x3 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
-        int y3 = int((BBoxs[i].y3 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
-        int x4 = int((BBoxs[i].x4 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
-        int y4 = int((BBoxs[i].y4 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
-        cv::line(BEV, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 0, 255), 3);
-        cv::line(BEV, cv::Point(x2, y2), cv::Point(x3, y3), cv::Scalar(0, 0, 255), 3);
-        cv::line(BEV, cv::Point(x3, y3), cv::Point(x4, y4), cv::Scalar(0, 0, 255), 3);
-        cv::line(BEV, cv::Point(x4, y4), cv::Point(x1, y1), cv::Scalar(0, 0, 255), 3);
-    }
+    
+    // 画框
+    // for (int i = 0; i < BBoxs.size(); i++)
+    // {
+    //     int x1 = int((BBoxs[i].x1 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
+    //     int y1 = int((BBoxs[i].y1 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+    //     int x2 = int((BBoxs[i].x2 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
+    //     int y2 = int((BBoxs[i].y2 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+    //     int x3 = int((BBoxs[i].x3 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
+    //     int y3 = int((BBoxs[i].y3 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+    //     int x4 = int((BBoxs[i].x4 + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
+    //     int y4 = int((BBoxs[i].y4 + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+    //     cv::line(BEV, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 0, 255), 3);
+    //     cv::line(BEV, cv::Point(x2, y2), cv::Point(x3, y3), cv::Scalar(0, 0, 255), 3);
+    //     cv::line(BEV, cv::Point(x3, y3), cv::Point(x4, y4), cv::Scalar(0, 0, 255), 3);
+    //     cv::line(BEV, cv::Point(x4, y4), cv::Point(x1, y1), cv::Scalar(0, 0, 255), 3);
+    // }
 
     cv::flip(BEV, BEV, 1);
 
@@ -233,11 +300,42 @@ cv::Mat point_cloud_BEV::Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::P
 
     Rotate(BEV, BEV, angle_);
 
-    sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
+    cv::rectangle(BEV, cv::Rect(620, 350, 40, 20), cv::Scalar(0, 0, 255),3);
 
-    obj_pub.publish(msg);
+    // sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
+
+    // obj_pub.publish(msg);
 
     return BEV;
+}
+
+cv::Mat point_cloud_BEV::cloud_to_image(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z)
+{
+    cv::Mat BEV(BEV_height, BEV_width, CV_8UC3, cv::Scalar(0));
+
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr clouds_out(new pcl::PointCloud<pcl::PointXYZRGB>); // 建立一个点云指针
+
+    pcl::copyPointCloud(*cloud_in, *clouds_out);
+
+    RGB_point_filter(clouds_out, offset_x - scale * (Box_width / 2), offset_x + scale * (Box_width / 2), "x", false);
+    RGB_point_filter(clouds_out, offset_y - scale * (Box_height / 2), offset_y + scale * (Box_height / 2), "y", false);
+
+    for (int i = 0; i < clouds_out->points.size(); i++)
+    {
+        int x_img = int((clouds_out->points[i].x + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
+        int y_img = int((clouds_out->points[i].y + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+        // std::cout << x_img << "," << y_img << "  ";
+        if (x_img < BEV_width && y_img < BEV_height && x_img > 0 && y_img > 0)
+        {
+            
+            // BEV.at<uchar>(y_img, x_img) = scale_to_255(clouds_out->points[i].z, min_z_, pass_z_);
+        }
+        
+        // std::cout << x_img << "," << y_img << "  ";
+    }
+
+    return BEV;
+
 }
 
 int point_cloud_BEV::scale_to_255(const float &H, const float &min, const float &max)
@@ -254,30 +352,33 @@ void point_cloud_BEV::Rotate(const cv::Mat &srcImage, cv::Mat &destImage, double
     cv::warpAffine(srcImage, destImage, M, cv::Size(srcImage.cols, srcImage.rows)); //仿射变换
 }
 
-void point_cloud_BEV::cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg)
+void point_cloud_BEV::cloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg)
 {
     double start_time = ros::Time::now().toSec();
-    pcl::PointCloud<pcl::PointXYZ>::Ptr pc_curr(new pcl::PointCloud<pcl::PointXYZ>);           // 建立一个点云指针
-    pcl::PointCloud<pcl::PointXYZ>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>); // 建立一个点云指针
-    pcl::fromROSMsg(*cloud_msg, *pc_curr);
+    pcl::PointCloud<PointType>::Ptr transformed_cloud(new pcl::PointCloud<PointType>); // 建立一个点云指针
+    sensor_msgs::PointCloud2 laserCloudMap;
+    position target_pos;
+    angle target_angle;
 
-    // float theta = 0;
+    livox_pcl_cbk(msg);
 
-    // Eigen::Affine3f transform = Eigen::Affine3f::Identity();
-    // transform.rotate(Eigen::AngleAxisf(theta, Eigen::Vector3f::UnitX())); //同理，UnitX(),绕X轴；UnitY(),绕Y轴
-    // pcl::transformPointCloud(*pc_curr, *transformed_cloud, transform);
+    transform_cloud(pl_full.makeShared(), transformed_cloud, target_pos, target_angle);
 
-    cv::Mat BEV = Point_cloud_BEV(pc_curr, scale_, offset_x_, offset_y_, offset_z_, detect_BBoxs);
+    // 计算俯视图
+    // cv::Mat BEV = Point_cloud_BEV(pc_curr, scale_, offset_x_, offset_y_, offset_z_, detect_BBoxs);
 
-    targetInfo temp;
+    // targetInfo temp;
 
-    temp.target_x = 100;
-    temp.target_y = 100;
-    temp.target_w = 200;
-    temp.target_h = 200;
-    temp.target_class = 0;
+    // temp.target_x = 100;
+    // temp.target_y = 100;
+    // temp.target_w = 200;
+    // temp.target_h = 200;
+    // temp.target_class = 0;
 
-    send_bbox_message(temp);
+    // send_bbox_message(temp);
+    pcl::toROSMsg(*transformed_cloud, laserCloudMap);
+    laserCloudMap.header.frame_id = "livox_frame";
+    publidarcloud.publish(laserCloudMap);
 
     double end_time = ros::Time::now().toSec();
 
@@ -336,17 +437,29 @@ void point_cloud_BEV::detectHandler(const autoware_msgs::DetectedObjectArray::Co
     }
 }
 
-void point_cloud_BEV::createROSPubSub()
+cv::Mat point_cloud_BEV::point_to_rgbimage(const pcl::PointCloud<PointType>::Ptr &cloud_in, double scale, position target_pos, angle target_angle)
+{
+    std::vector<box> BBoxs;   // 传入2D的目标框
+    pcl::PointCloud<PointType>::Ptr transformed_cloud(new pcl::PointCloud<PointType>); // 建立一个点云指针
+    transform_cloud(cloud_in, transformed_cloud, target_pos, target_angle);
+    cv::Mat BEV;
+    
+    return BEV;
+}
+
+point_cloud_BEV::point_cloud_BEV()
 {
     image_transport::ImageTransport it(nh_);
 
     obj_pub = it.advertise("image", 100);
 
-    Img_sub = nh_.subscribe("/livox/lidar", 100, &point_cloud_BEV::cloudCallback, this); // image_raw
+    lidar_sub = nh_.subscribe("/livox/lidar", 100, &point_cloud_BEV::cloudCallback, this); // image_raw
 
     subGPS = nh_.subscribe<nav_msgs::Odometry>(gpsTopic, 200, &point_cloud_BEV::gpsHandler, this, ros::TransportHints().tcpNoDelay());
 
     subcontrol = nh_.subscribe<std_msgs::Float32MultiArray>(controlTopic, 200, &point_cloud_BEV::controlHandler, this, ros::TransportHints().tcpNoDelay());
 
     subDetect = nh_.subscribe<autoware_msgs::DetectedObjectArray>(detectTopic, 200, &point_cloud_BEV::detectHandler, this, ros::TransportHints().tcpNoDelay());
+
+    publidarcloud = nh_.advertise<sensor_msgs::PointCloud2>("pcl_cloud", 100000);
 }

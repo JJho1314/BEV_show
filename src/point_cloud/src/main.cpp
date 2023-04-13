@@ -14,6 +14,9 @@
 #include <string>
 #include <sstream>
 
+
+#define PI 3.1415926
+
 image_transport::Publisher obj_pub;
 
 void readInToMatrix(std::fstream &in, std::string FilePath, std::vector<position> &path)
@@ -71,35 +74,44 @@ void readInToMatrix(std::fstream &in, std::string FilePath, std::vector<position
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "point_cloud_BEV");
-
     ros::NodeHandle nh;
-
     image_transport::ImageTransport it(nh);
-
     initSocketData();
-
     point_cloud_BEV pcb;
 
-    ros::Publisher pcl_pub = nh.advertise<sensor_msgs::PointCloud2>("pcl_output", 1);
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>); // 建立一个点云指针
 
-    obj_pub = it.advertise("image", 100);
+    // std::vector<box> BBoxs;   // 传入2D的目标框
+    // position target_pos;     //  鼠标传入的目标位置
+    // angle target_angle;      // 鼠标传入的目标姿态角度
 
-    sensor_msgs::PointCloud2 output;
+    // pcb.createROSPubSub();
+    
+    ros::spin();
 
-    pcl::PointCloud<pcl::PointXYZ> cloud;
+    // while (ros::ok())
+    // {
+    //     ROS_INFO("ok");
 
-    pcl::io::loadPCDFile("/home/jjho/workspace/BEV_show/src/point_cloud/data/outdoor-208.pcd", cloud); //修改自己pcd文件所在路径
+    //     target_pos.x = 0;
+    //     target_pos.y = 0;
+    //     target_pos.z = 1;
+    //     target_angle.yaw = PI;
+        
+    //     // pcb.transform_cloud(cloud.makeShared(), transformed_cloud, target_angle, target_pos);
+    //     // cv::Mat BEV = pcb.Point_cloud_BEV(transformed_cloud, 8, 0, 0, 0, BBoxs);
 
-    pcl::toROSMsg(cloud, output);
+    //     // cv::Mat BEV = pcb.point_to_rgbimage(cloud.makeShared(), 8, target_pos, target_angle);
 
-    output.header.frame_id = "livox_frame";
+    //     // sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
 
-    // std::vector<position> path;
-    // std::fstream in;
-    // readInToMatrix(in, "/home/jjho/workspace/BEV_show/src/point_cloud/data/picking_list.txt", path);
+    //     // obj_pub.publish(msg);
+    //     ros::Duration(0.2).sleep();
+        
 
-
-
+    //     ros::spinOnce();
+    //     loop_rate.sleep();
+    // }
 
 
     return (0);

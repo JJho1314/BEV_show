@@ -12,15 +12,25 @@
 #include <nav_msgs/Path.h>
 #include <image_transport/image_transport.h>
 #include <std_msgs/Float32MultiArray.h>
-
 #include "autoware_msgs/DetectedObjectArray.h"
 #include "autoware_msgs/DetectedObject.h"
+#include <livox_ros_driver/CustomMsg.h>
+
+typedef pcl::PointXYZINormal PointType;
+typedef pcl::PointCloud<PointType> PointCloudXYZI;
 
 struct position
 {
     float x;
     float y;
     float z;
+};
+
+struct angle
+{
+    float yaw;
+    float pitch;
+    float roll;
 };
 
 struct box
@@ -68,13 +78,17 @@ int initSocketData();
 class point_cloud_BEV
 {
 public:
-    void createROSPubSub();
+    point_cloud_BEV();
 
     cv::Mat Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z, std::vector<box> BBoxs);
+    
+    cv::Mat point_to_rgbimage(const pcl::PointCloud<PointType>::Ptr &cloud_in, double scale, position target_pos, angle target_angle);
 
+    void cloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
 private:
-    void cloudCallback(const sensor_msgs::PointCloud2::Ptr &cloud_msg);
 
+    void livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg);
+    
     void gpsHandler(const nav_msgs::Odometry::ConstPtr &gpsMsg);
 
     void controlHandler(const std_msgs::Float32MultiArray::ConstPtr &controlMsg);
@@ -85,16 +99,23 @@ private:
 
     void point_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative);
 
+    void RGB_point_filter(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative);
+
+    void transform_cloud(const pcl::PointCloud<PointType>::Ptr &cloud_in, const pcl::PointCloud<PointType>::Ptr &transformed_cloud, const position target_pos, const angle target_angle);
+
+    cv::Mat cloud_to_image(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z);
     // 图像旋转
     ///@ angle 要旋转的角度
     void Rotate(const cv::Mat &srcImage, cv::Mat &destImage, double angle);
 
     ros::NodeHandle nh_;
     image_transport::Publisher obj_pub;
-    ros::Subscriber Img_sub;
+    ros::Subscriber lidar_sub;
     ros::Subscriber subGPS;
     ros::Subscriber subcontrol;
     ros::Subscriber subDetect;
+
+    ros::Publisher publidarcloud;
 
     std::string gpsTopic = "odom";
     std::string controlTopic = "control_map";
@@ -102,8 +123,8 @@ private:
 
     std::vector<box> detect_BBoxs;
 
-    float min_z_ = -6.0;
-    float pass_z_ = 2.0;
+    float min_z_ = -10.0;
+    float pass_z_ = 10.0;
     float scale_ = 10;
     int Box_height = 10;
     int Box_width = 16;

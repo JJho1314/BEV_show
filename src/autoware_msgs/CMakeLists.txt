@@ -71,11 +71,11 @@ add_service_files(
 )
 
 # generate_messages(
-#   # DEPENDENCIES
-#   #   geometry_msgs
-#   #   jsk_recognition_msgs
-#   #   sensor_msgs
-#   #   std_msgs
+#   DEPENDENCIES
+#     geometry_msgs
+#     jsk_recognition_msgs
+#     sensor_msgs
+#     std_msgs
 # )
 
 catkin_package(
