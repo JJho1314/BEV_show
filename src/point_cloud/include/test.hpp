@@ -16,8 +16,9 @@
 #include "autoware_msgs/DetectedObject.h"
 #include <livox_ros_driver/CustomMsg.h>
 
-typedef pcl::PointXYZINormal PointType;
-typedef pcl::PointCloud<PointType> PointCloudXYZI;
+typedef pcl::PointXYZRGB PointType;
+typedef pcl::PointCloud<pcl::PointXYZINormal> PointCloudXYZI;
+typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 
 struct position
 {
@@ -82,7 +83,7 @@ public:
 
     cv::Mat Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z, std::vector<box> BBoxs);
     
-    cv::Mat point_to_rgbimage(const pcl::PointCloud<PointType>::Ptr &cloud_in, double scale, position target_pos, angle target_angle);
+    cv::Mat point_to_rgbimage(const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &cloud_in, double scale, position target_pos, angle target_angle);
 
     void cloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
 private:
@@ -101,9 +102,9 @@ private:
 
     void RGB_point_filter(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, const double min, const double max, std::string axis, bool setFilterLimitsNegative);
 
-    void transform_cloud(const pcl::PointCloud<PointType>::Ptr &cloud_in, const pcl::PointCloud<PointType>::Ptr &transformed_cloud, const position target_pos, const angle target_angle);
+    void transform_cloud(const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &cloud_in, const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &transformed_cloud, const position target_pos, const angle target_angle);
 
-    cv::Mat cloud_to_image(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z);
+    cv::Mat cloud_to_image(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud_in, double scale);
     // 图像旋转
     ///@ angle 要旋转的角度
     void Rotate(const cv::Mat &srcImage, cv::Mat &destImage, double angle);
@@ -126,10 +127,10 @@ private:
     float min_z_ = -10.0;
     float pass_z_ = 10.0;
     float scale_ = 10;
-    int Box_height = 10;
-    int Box_width = 16;
-    int BEV_height = 720;
-    int BEV_width = 1280;
+    int Box_height = 10;   // 场景长宽比例
+    int Box_width = 16;    // 场景长宽比例
+    int BEV_height = 720;  // 视频尺寸
+    int BEV_width = 1280;  // 视频尺寸
     int angle_ = 0;
     int offset_x_ = 0;
     int offset_y_ = 0;

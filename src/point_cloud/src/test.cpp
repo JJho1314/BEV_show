@@ -212,6 +212,7 @@ void point_cloud_BEV::livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr 
         pl_buff[i].clear();
         pl_buff[i].reserve(plsize);
     }
+
     omp_set_num_threads(12); //加速
 #pragma omp parallel for
     for(uint i=1; i<plsize; i++)
@@ -223,8 +224,6 @@ void point_cloud_BEV::livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr 
         pl_full[i].z = msg->points[i].z;
         pl_full[i].intensity = msg->points[i].reflectivity;
         pl_full[i].curvature = msg->points[i].offset_time / float(1000000); //use curvature as time of each laser points
-
-        std::cout << "intensity: " << pl_full[i].intensity << std::endl;
 
         bool is_new = false;
         //与前一点间距太小则忽略该点，间距太小不利于特征提取
@@ -238,7 +237,7 @@ void point_cloud_BEV::livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr 
     }
 }
 
-void point_cloud_BEV::transform_cloud(const pcl::PointCloud<PointType>::Ptr &cloud_in, const pcl::PointCloud<PointType>::Ptr &transformed_cloud, const position target_pos, const angle target_angle)
+void point_cloud_BEV::transform_cloud(const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &cloud_in, const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &transformed_cloud, const position target_pos, const angle target_angle)
 {
     Eigen::Affine3f transform = Eigen::Affine3f::Identity();
     transform.rotate(Eigen::AngleAxisf(target_angle.yaw, Eigen::Vector3f::UnitZ())); //同理，UnitX(),绕X轴；UnitY(),绕Y轴
@@ -309,7 +308,7 @@ cv::Mat point_cloud_BEV::Point_cloud_BEV(const pcl::PointCloud<pcl::PointXYZ>::P
     return BEV;
 }
 
-cv::Mat point_cloud_BEV::cloud_to_image(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud_in, double scale, double offset_x, double offset_y, double offset_z)
+cv::Mat point_cloud_BEV::cloud_to_image(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud_in, double scale)
 {
     cv::Mat BEV(BEV_height, BEV_width, CV_8UC3, cv::Scalar(0));
 
@@ -317,22 +316,23 @@ cv::Mat point_cloud_BEV::cloud_to_image(const pcl::PointCloud<pcl::PointXYZRGB>:
 
     pcl::copyPointCloud(*cloud_in, *clouds_out);
 
-    RGB_point_filter(clouds_out, offset_x - scale * (Box_width / 2), offset_x + scale * (Box_width / 2), "x", false);
-    RGB_point_filter(clouds_out, offset_y - scale * (Box_height / 2), offset_y + scale * (Box_height / 2), "y", false);
+    RGB_point_filter(clouds_out, 0 - scale * (Box_width / 2), 0 + scale * (Box_width / 2), "x", false);
+    RGB_point_filter(clouds_out, 0 - scale * (Box_height / 2), 0 + scale * (Box_height / 2), "y", false);
 
     for (int i = 0; i < clouds_out->points.size(); i++)
     {
-        int x_img = int((clouds_out->points[i].x + (scale * (Box_width / 2) - offset_x)) * BEV_width / (scale * Box_width));
-        int y_img = int((clouds_out->points[i].y + (scale * (Box_height / 2) - offset_y)) * BEV_height / (scale * Box_height));
+        int x_img = int((clouds_out->points[i].x + (scale * (Box_width / 2))) * BEV_width / (scale * Box_width));
+        int y_img = int((clouds_out->points[i].y + (scale * (Box_height / 2))) * BEV_height / (scale * Box_height));
         // std::cout << x_img << "," << y_img << "  ";
         if (x_img < BEV_width && y_img < BEV_height && x_img > 0 && y_img > 0)
         {
-            
-            // BEV.at<uchar>(y_img, x_img) = scale_to_255(clouds_out->points[i].z, min_z_, pass_z_);
+            BEV.at<cv::Vec3b>(y_img, x_img)[0] = clouds_out->points[i].b;
+            BEV.at<cv::Vec3b>(y_img, x_img)[1] = clouds_out->points[i].g;
+            BEV.at<cv::Vec3b>(y_img, x_img)[2] = clouds_out->points[i].r;
         }
-        
-        // std::cout << x_img << "," << y_img << "  ";
     }
+
+    cv::flip(BEV, BEV, 1);
 
     return BEV;
 
@@ -355,17 +355,26 @@ void point_cloud_BEV::Rotate(const cv::Mat &srcImage, cv::Mat &destImage, double
 void point_cloud_BEV::cloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg)
 {
     double start_time = ros::Time::now().toSec();
-    pcl::PointCloud<PointType>::Ptr transformed_cloud(new pcl::PointCloud<PointType>); // 建立一个点云指针
+    pcl::PointCloud<pcl::PointXYZINormal>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZINormal>); // 建立一个点云指针
     sensor_msgs::PointCloud2 laserCloudMap;
     position target_pos;
     angle target_angle;
 
     livox_pcl_cbk(msg);
 
-    transform_cloud(pl_full.makeShared(), transformed_cloud, target_pos, target_angle);
+    target_angle.pitch = 0;
+    target_angle.roll = 0;
+    target_angle.yaw = 0;
 
-    // 计算俯视图
-    // cv::Mat BEV = Point_cloud_BEV(pc_curr, scale_, offset_x_, offset_y_, offset_z_, detect_BBoxs);
+    /* 计算俯视图
+        函数输入: 点云指针, 尺度, 位置, 欧啦角
+        函数输出: 图片
+    */
+    cv::Mat BEV = point_to_rgbimage(pl_full.makeShared(), 2, target_pos, target_angle);
+
+    sensor_msgs::ImagePtr image_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", BEV).toImageMsg();
+
+    obj_pub.publish(image_msg);
 
     // targetInfo temp;
 
@@ -376,7 +385,7 @@ void point_cloud_BEV::cloudCallback(const livox_ros_driver::CustomMsg::ConstPtr 
     // temp.target_class = 0;
 
     // send_bbox_message(temp);
-    pcl::toROSMsg(*transformed_cloud, laserCloudMap);
+    pcl::toROSMsg(pl_full, laserCloudMap);
     laserCloudMap.header.frame_id = "livox_frame";
     publidarcloud.publish(laserCloudMap);
 
@@ -437,12 +446,65 @@ void point_cloud_BEV::detectHandler(const autoware_msgs::DetectedObjectArray::Co
     }
 }
 
-cv::Mat point_cloud_BEV::point_to_rgbimage(const pcl::PointCloud<PointType>::Ptr &cloud_in, double scale, position target_pos, angle target_angle)
+cv::Mat point_cloud_BEV::point_to_rgbimage(const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &cloud_in, double scale, position target_pos, angle target_angle)
 {
+    int h;   // 用于计算强度颜色
+    float f, v, p, q, t;
     std::vector<box> BBoxs;   // 传入2D的目标框
-    pcl::PointCloud<PointType>::Ptr transformed_cloud(new pcl::PointCloud<PointType>); // 建立一个点云指针
+    pcl::PointCloud<pcl::PointXYZINormal>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZINormal>); // 建立一个点云指针
+    pcl::PointCloud<PointType>::Ptr rgb_cloud(new pcl::PointCloud<PointType>); // 建立一个点云指针
     transform_cloud(cloud_in, transformed_cloud, target_pos, target_angle);
-    cv::Mat BEV;
+    rgb_cloud->resize(transformed_cloud->points.size());
+    
+    for(int i = 0; i < transformed_cloud->points.size(); i++)
+    {
+        rgb_cloud->points[i].x = cloud_in->points[i].x;
+        rgb_cloud->points[i].y = cloud_in->points[i].y;
+        rgb_cloud->points[i].z = cloud_in->points[i].z;
+        h = floor(transformed_cloud->points[i].intensity * 6 / 255);
+        f = (transformed_cloud->points[i].intensity * 6.0 / 255.0) - h;
+        p = 0;
+        v = 1.0;
+        q = 1.0 * (1.0 - f * 1.0);
+        t = 1.0 * (1.0 - (1 - f) * 1.0);
+     
+        switch(h)
+        {
+            case 0:
+                rgb_cloud->points[i].r = int(v * 255);
+                rgb_cloud->points[i].g = int(t * 255);
+                rgb_cloud->points[i].b = int(p * 255);
+                break;
+            case 1:
+                rgb_cloud->points[i].r = int(q * 255);
+                rgb_cloud->points[i].g = int(v * 255);
+                rgb_cloud->points[i].b = int(p * 255);
+                break;
+            case 2:
+                rgb_cloud->points[i].r = int(p * 255);
+                rgb_cloud->points[i].g = int(v * 255);
+                rgb_cloud->points[i].b = int(t * 255);
+                break;
+            case 3:
+                rgb_cloud->points[i].r = int(p * 255);
+                rgb_cloud->points[i].g = int(q * 255);
+                rgb_cloud->points[i].b = int(v * 255);
+                break;
+            case 4:
+                rgb_cloud->points[i].r = int(t * 255);
+                rgb_cloud->points[i].g = int(p * 255);
+                rgb_cloud->points[i].b = int(v * 255);
+                break;
+            case 5:
+                rgb_cloud->points[i].r = int(v * 255);
+                rgb_cloud->points[i].g = int(p * 255);
+                rgb_cloud->points[i].b = int(q * 255);
+                break;
+            default: break;
+        }
+    }
+
+    cv::Mat BEV = cloud_to_image(rgb_cloud, scale);
     
     return BEV;
 }
